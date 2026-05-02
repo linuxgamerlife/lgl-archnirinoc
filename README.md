@@ -5,7 +5,7 @@ A post-install bash script that sets up [niri](https://github.com/niri-wm/niri) 
 ---
 
 > [!WARNING]
-> **Tested on VMs and AMD hardware. Works fine.**
+> **Tested on VMs only.**
 >
 > **VM requirements:** GPU acceleration must be enabled with OpenGL support (e.g. VirtIO GPU + 3D acceleration in QEMU/KVM). Without this niri will not start.
 >
