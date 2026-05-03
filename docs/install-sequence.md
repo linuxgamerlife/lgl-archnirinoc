@@ -1,6 +1,6 @@
 # Install Sequence
 
-Assumes: Arch Linux base install, boots to TTY, internet connected, logged in as regular user with sudo.
+Assumes: Arch-based Linux (Arch, CachyOS, EndeavourOS, Manjaro, Garuda, Artix, etc.) base install, boots to TTY, internet connected, logged in as regular user with sudo.
 
 ## Cinnamon Prompt
 
@@ -11,11 +11,13 @@ The script prompts before anything is installed. Answer `n` to skip if you alrea
 - Checks sudo access
 - Checks not running as root
 - Checks internet connectivity (ping 8.8.8.8)
-- Checks `/etc/os-release` for Arch Linux
+- Checks at least 10 GB free on `/`
+- Checks `/etc/os-release` for `ID=arch` or `ID_LIKE=arch`
+- Checks `pacman` is available
 
-## Phase 1: yay (AUR helper)
+## Phase 1: AUR Helper
 
-Skipped if yay is already installed. Otherwise:
+Checks for `yay`, then `paru`. Uses whichever is found. If neither exists, installs yay:
 
 ```bash
 sudo pacman -S --needed --noconfirm base-devel git
@@ -45,10 +47,12 @@ sudo systemctl enable lightdm
 
 ## Phase 3: Packages
 
-System update runs first:
+Cache cleaned first to free disk space, then databases force-resynced, then system updated:
 
 ```bash
-sudo pacman -Syu --noconfirm
+sudo pacman -Sc --noconfirm
+sudo pacman -Syy --noconfirm
+sudo pacman -Su --noconfirm
 ```
 
 Then official repo packages:
@@ -56,7 +60,6 @@ Then official repo packages:
 ```bash
 sudo pacman -S --needed --noconfirm \
   niri \
-  xwayland-satellite \
   alacritty \
   brightnessctl \
   imagemagick \
@@ -66,9 +69,14 @@ sudo pacman -S --needed --noconfirm \
   xdg-desktop-portal \
   xdg-desktop-portal-gtk \
   xdg-desktop-portal-gnome \
+  xdg-utils \
   qt6ct \
   qt5ct \
+  qt5-wayland \
+  qt6-wayland \
   qt6-multimedia-ffmpeg \
+  nwg-look \
+  xsettingsd \
   gnome-keyring \
   gnome-menus \
   cliphist \
@@ -78,10 +86,16 @@ sudo pacman -S --needed --noconfirm \
 Then AUR packages:
 
 ```bash
-yay -S --needed --noconfirm \
-  noctalia-shell \
-  adw-gtk3 \
-  matugen
+yay -S --needed --noconfirm noctalia-shell matugen
+yay -S --needed --noconfirm adw-gtk3  # optional — failure is warned, not fatal
+```
+
+Then desktop/MIME databases are updated and the KDE app discovery symlink is created:
+
+```bash
+sudo update-desktop-database /usr/share/applications
+sudo update-mime-database /usr/share/mime
+sudo ln -s /etc/xdg/menus/gnome-applications.menu /etc/xdg/menus/applications.menu
 ```
 
 > `gnome-keyring` and `gnome-menus` explicitly installed — ensures they are present when Cinnamon is skipped.
@@ -119,25 +133,28 @@ Appended block:
 // archnirinoc -- appended by install.sh v0.0.1
 // ---------------------------------------------
 
-// Updates the D-Bus and systemd user environment
+// Exports all current environment variables to D-Bus and the systemd user session.
+// Required so portals, tray apps, and systemd-managed services (e.g. xdg-desktop-portal)
+// inherit the correct Wayland/display environment that niri sets up at launch.
 spawn-at-startup "dbus-update-activation-environment" "--systemd" "--all"
 
-// Xwayland support
-spawn-at-startup "xwayland-satellite"
+// Lightweight GTK settings daemon. Reads ~/.config/xsettingsd/xsettingsd.conf and serves
+// theme, font, and icon settings to GTK2/GTK3 apps via the XSETTINGS protocol.
+// Without this, nwg-look theme changes won't persist across reboots — apps fall back to defaults.
+spawn-at-startup "xsettingsd"
 
-// Noctalia shell
+// Launches the Noctalia shell via the QuickShell (qs) runtime.
+// Noctalia provides the bar, notifications, wallpaper, lock screen, night light,
+// launcher, and polkit agent — it replaces waybar, mako, swaybg, and wlsunset.
 spawn-at-startup "qs" "-c" "noctalia-shell"
 
-// Uncomment if apps fail to focus when launched via Noctalia
+// Uncomment if apps launched from Noctalia fail to gain focus.
 // debug {
 //     honor-xdg-activation-with-invalid-serial
 // }
 
 // OUTPUT CONFIGURATION
 // After first login run: niri msg outputs
-// Note your output name and mode, then uncomment and edit below, then:
-//   niri msg action quit
-//
 // output "Virtual-1" {
 //     mode "1920x1080@60.000"
 //     scale 1.0
@@ -158,23 +175,25 @@ cat > ~/.config/xdg-desktop-portal/niri-portals.conf << 'EOF'
 [preferred]
 default=gnome;gtk;
 org.freedesktop.impl.portal.Access=gtk;
+org.freedesktop.impl.portal.AppChooser=gtk;
 org.freedesktop.impl.portal.Notification=gtk;
 org.freedesktop.impl.portal.Secret=gnome-keyring;
 org.freedesktop.impl.portal.FileChooser=gtk;
 EOF
 ```
 
+`AppChooser=gtk` routes the "Open With" dialog to the GTK portal backend. Without this, it falls back to the GNOME portal which requires gnome-shell — resulting in an empty app list.
+
 ## Phase 7: System Environment
 
 ```bash
 echo 'QT_QPA_PLATFORMTHEME=qt6ct' | sudo tee -a /etc/environment
+echo 'XDG_DATA_DIRS=/usr/local/share:/usr/share' | sudo tee -a /etc/environment
 ```
 
-## Phase 8: GTK Theme Autostart
+`XDG_DATA_DIRS` ensures portals and app choosers can locate `.desktop` files.
 
-Write `~/.config/autostart/archnirinoc-gtk-theme.desktop` — fires once on first login, sets dark mode via gsettings, then deletes itself.
-
-## Phase 9: Noctalia Polkit Agent
+## Phase 8: Noctalia Polkit Agent
 
 Sparse-clone `polkit-agent` from [noctalia-dev/noctalia-plugins](https://github.com/noctalia-dev/noctalia-plugins) into `~/.config/noctalia/plugins/polkit-agent`. Idempotent — skipped if directory already exists.
 
@@ -201,7 +220,7 @@ Also writes `~/.config/noctalia/plugins.json` with the plugin enabled (skipped i
 
 > If Noctalia overwrites `plugins.json` on first launch, enable the polkit-agent manually via the Noctalia plugin manager.
 
-## Phase 10: Post-Install Banner
+## Phase 9: Post-Install Banner
 
 Prints display config instructions and a reboot prompt.
 
@@ -216,6 +235,10 @@ niri msg outputs
 # Uncomment and fill the OUTPUT CONFIGURATION section
 ```
 
+GTK theming: use `nwg-look` to set theme, icons, and fonts. Changes persist via `xsettingsd`.
+
+Qt theming: run `qt6ct` for Qt6 apps, `qt5ct` for Qt5 apps.
+
 ## Removing lightdm for a minimal install
 
 If you want a TTY-only setup after install:
@@ -228,6 +251,15 @@ sudo pacman -Rs lightdm lightdm-gtk-greeter
 
 Start niri manually from TTY with `niri-session`.
 
+## Repair Scripts
+
+`repair_scripts/` contains helper scripts for common post-install issues:
+
+| Script | Purpose |
+|---|---|
+| `fix-portal.sh` | Restart xdg-desktop-portal services — fixes empty app chooser / file associations |
+| `fix-kde-apps.sh` | Rebuild KDE sycoca cache and create `applications.menu` symlink — fixes empty app list in Dolphin |
+
 ## Known Issues
 
 | Issue | Workaround |
@@ -236,3 +268,4 @@ Start niri manually from TTY with `niri-session`.
 | Suspend → red screen | Known niri + GPU bug. Avoid suspend. |
 | Noctalia not launching | Run `niri validate` — config parse error kills all spawns |
 | Two Noctalia instances | Only use spawn-at-startup, not systemd unit |
+| adw-gtk3 not found | Non-fatal — install manually later with `yay -S adw-gtk3` |

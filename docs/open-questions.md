@@ -28,3 +28,13 @@
 
 - Is this actually needed for Noctalia app launching to work correctly?
 - Currently commented out in config — test with and without
+
+## Qt5 Breeze Style
+
+- KDE6 `breeze` package no longer ships a Qt5 style plugin — no standalone Qt5 Breeze package exists on Arch or AUR
+- Qt5 apps in qt5ct are limited to Fusion/Windows built-in styles
+- Worth revisiting if a community package appears
+
+## adw-gtk3
+
+- Install is non-fatal — confirm whether failure is a CachyOS-specific mirror/repo issue or a broader package availability problem
